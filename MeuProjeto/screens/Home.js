@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import {
     View,
@@ -17,11 +17,6 @@ import * as Notifications from "expo-notifications";
 import { auth } from "../config/firebase";
 import { sair } from "../services/auth";
 
-
-// =====================================================
-// CONFIGURAÇÃO DAS NOTIFICAÇÕES
-// =====================================================
-
 if (Platform.OS !== "web") {
     Notifications.setNotificationHandler({
         handleNotification: async () => ({
@@ -33,50 +28,36 @@ if (Platform.OS !== "web") {
     });
 }
 
-
-// =====================================================
-// HOME
-// =====================================================
-
 export default function Home({ navigation }) {
-
-    // -----------------------------
-    // NAVEGAÇÃO INTERNA
-    // -----------------------------
 
     const [aba, setAba] = useState("home");
 
-    const [servicoSelecionado, setServicoSelecionado] = useState(null);
-
-
-    // -----------------------------
-    // CAMPOS DO AGENDAMENTO
-    // -----------------------------
+    const [servicoSelecionado, setServicoSelecionado] =
+        useState(null);
 
     const [pet, setPet] = useState("");
     const [data, setData] = useState("");
     const [horario, setHorario] = useState("");
 
-
-    // -----------------------------
-    // NOTIFICAÇÕES
-    // -----------------------------
-
     const [notificacoes, setNotificacoes] = useState([]);
 
+    const [popupVisivel, setPopupVisivel] = useState(false);
 
-    // =================================================
-    // DADOS DO USUÁRIO
-    // =================================================
+    const [popup, setPopup] = useState({
+        titulo: "",
+        mensagem: "",
+        tipo: "",
+    });
 
-    const email = auth.currentUser?.email || "Usuário";
+    const popupTimer = useRef(null);
 
-    const nome = email.split("@")[0];
+    const idsNotificacoes = useRef(new Set());
 
+    const email =
+        auth.currentUser?.email || "Usuário";
 
-    // =================================================
-    // PERMISSÃO PARA NOTIFICAÇÕES
-    // =================================================
+    const nome =
+        email.split("@")[0];
 
     useEffect(() => {
 
@@ -96,16 +77,21 @@ export default function Home({ navigation }) {
                             name: "PetShop",
                             importance:
                                 Notifications.AndroidImportance.MAX,
-                            vibrationPattern: [0, 250, 250, 250],
+                            vibrationPattern:
+                                [0, 250, 250, 250],
+                            sound: "default",
+                            enableVibrate: true,
                         }
                     );
 
                 }
 
-                const { status } =
+                const {
+                    status: statusAtual
+                } =
                     await Notifications.getPermissionsAsync();
 
-                if (status !== "granted") {
+                if (statusAtual !== "granted") {
 
                     await Notifications.requestPermissionsAsync();
 
@@ -114,7 +100,7 @@ export default function Home({ navigation }) {
             } catch (erro) {
 
                 console.log(
-                    "Erro nas notificações:",
+                    "Erro ao configurar notificações:",
                     erro
                 );
 
@@ -126,109 +112,258 @@ export default function Home({ navigation }) {
 
     }, []);
 
+    useEffect(() => {
 
-    // =================================================
-    // ADICIONAR NOTIFICAÇÃO NA LISTA
-    // =================================================
+        return () => {
 
-    function adicionarNotificacao(titulo, mensagem) {
+            if (popupTimer.current) {
 
-        const novaNotificacao = {
-
-            id: Date.now().toString(),
-
-            titulo: titulo,
-
-            mensagem: mensagem,
-
-            horario: new Date().toLocaleTimeString(
-                "pt-BR",
-                {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                }
-            ),
-
-        };
-
-
-        setNotificacoes((listaAtual) => [
-
-            novaNotificacao,
-
-            ...listaAtual,
-
-        ]);
-
-    }
-
-
-    // =================================================
-    // ENVIAR NOTIFICAÇÃO
-    // =================================================
-
-    async function enviarNotificacao(
-        titulo,
-        mensagem
-    ) {
-
-        // Sempre adiciona na lista interna
-        adicionarNotificacao(
-            titulo,
-            mensagem
-        );
-
-
-        // Notificação do sistema somente em
-        // Android/iOS
-        if (Platform.OS !== "web") {
-
-            try {
-
-                await Notifications.scheduleNotificationAsync({
-
-                    content: {
-
-                        title: titulo,
-
-                        body: mensagem,
-
-                        sound: true,
-
-                    },
-
-                    trigger: null,
-
-                });
-
-            } catch (erro) {
-
-                console.log(
-                    "Não foi possível enviar a notificação do sistema:",
-                    erro
+                clearTimeout(
+                    popupTimer.current
                 );
 
             }
 
+        };
+
+    }, []);
+
+    function mostrarPopup(
+        titulo,
+        mensagem,
+        tipo
+    ) {
+
+        setPopup({
+            titulo,
+            mensagem,
+            tipo,
+        });
+
+        setPopupVisivel(true);
+
+        if (popupTimer.current) {
+
+            clearTimeout(
+                popupTimer.current
+            );
+
         }
+
+        popupTimer.current = setTimeout(() => {
+
+            setPopupVisivel(false);
+
+        }, 5000);
 
     }
 
+    function registrarNotificacao(
+        id,
+        titulo,
+        mensagem,
+        tipo
+    ) {
 
-    // =================================================
-    // ABRIR SERVIÇO
-    // =================================================
+        if (
+            idsNotificacoes.current.has(id)
+        ) {
+
+            return;
+
+        }
+
+        idsNotificacoes.current.add(id);
+
+        const novaNotificacao = {
+
+            id,
+
+            titulo,
+
+            mensagem,
+
+            tipo,
+
+            horario:
+                new Date().toLocaleTimeString(
+                    "pt-BR",
+                    {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                    }
+                ),
+
+        };
+
+        setNotificacoes(
+            listaAtual => [
+                novaNotificacao,
+                ...listaAtual,
+            ]
+        );
+
+    }
+
+    useEffect(() => {
+
+        if (Platform.OS === "web") {
+            return;
+        }
+
+        const subscription =
+            Notifications.addNotificationReceivedListener(
+                (notification) => {
+
+                    const id =
+                        notification.request.identifier;
+
+                    const titulo =
+                        notification.request.content.title ||
+                        "Notificação";
+
+                    const mensagem =
+                        notification.request.content.body ||
+                        "Você recebeu uma nova notificação.";
+
+                    const dados =
+                        notification.request.content.data ||
+                        {};
+
+                    const tipo =
+                        dados.tipo ||
+                        "geral";
+
+                    registrarNotificacao(
+                        id,
+                        titulo,
+                        mensagem,
+                        tipo
+                    );
+
+                }
+            );
+
+        return () => {
+
+            subscription.remove();
+
+        };
+
+    }, []);
+
+    async function enviarNotificacao(
+        titulo,
+        mensagem,
+        tipo
+    ) {
+
+        if (Platform.OS === "web") {
+
+            const id =
+                `web-${Date.now()}`;
+
+            registrarNotificacao(
+                id,
+                titulo,
+                mensagem,
+                tipo
+            );
+
+            mostrarPopup(
+                titulo,
+                mensagem,
+                tipo
+            );
+
+            return true;
+
+        }
+
+        try {
+
+            const {
+                status
+            } =
+                await Notifications.getPermissionsAsync();
+
+            if (status !== "granted") {
+
+                Alert.alert(
+                    "Permissão necessária",
+                    "Ative as notificações para receber as confirmações."
+                );
+
+                return false;
+
+            }
+
+            mostrarPopup(
+                titulo,
+                mensagem,
+                tipo
+            );
+
+            await Notifications.scheduleNotificationAsync({
+
+                content: {
+
+                    title: titulo,
+
+                    body: mensagem,
+
+                    sound: true,
+
+                    data: {
+                        tipo: tipo,
+                    },
+
+                },
+
+                trigger: {
+
+                    type:
+                        Notifications
+                            .SchedulableTriggerInputTypes
+                            .TIME_INTERVAL,
+
+                    seconds: 2,
+
+                    ...(Platform.OS === "android"
+                        ? {
+                            channelId: "petshop",
+                        }
+                        : {}),
+
+                },
+
+            });
+
+            return true;
+
+        } catch (erro) {
+
+            console.log(
+                "Erro ao criar notificação:",
+                erro
+            );
+
+            Alert.alert(
+                "Erro",
+                "Não foi possível enviar a notificação."
+            );
+
+            return false;
+
+        }
+
+    }
 
     function abrirServico(tipo) {
 
         setServicoSelecionado(tipo);
 
     }
-
-
-    // =================================================
-    // AGENDAR SERVIÇO
-    // =================================================
 
     async function agendarServico() {
 
@@ -247,44 +382,32 @@ export default function Home({ navigation }) {
 
         }
 
+        const servico =
+            servicoSelecionado.toLowerCase();
 
         const mensagem =
-            `O serviço de ${servicoSelecionado.toLowerCase()} de ${pet} foi agendado para ${data} às ${horario}.`;
+            `O serviço de ${servico} de ${pet} foi agendado para ${data} às ${horario}.`;
 
+        const sucesso =
+            await enviarNotificacao(
+                "Agendamento confirmado! 🐾",
+                mensagem,
+                "agendamento"
+            );
 
-        await enviarNotificacao(
-            "Agendamento confirmado! 🐾",
-            mensagem
-        );
-
-
-        Alert.alert(
-            "Tudo certo! 🎉",
-            "Seu agendamento foi realizado com sucesso."
-        );
-
-
-        // LIMPA OS CAMPOS
+        if (!sucesso) {
+            return;
+        }
 
         setPet("");
         setData("");
         setHorario("");
 
-
-        // Fecha o formulário
-
         setServicoSelecionado(null);
 
-
-        // Vai para notificações
-        setAba("notificacoes");
+        setAba("home");
 
     }
-
-
-    // =================================================
-    // COMPRAR PRODUTO
-    // =================================================
 
     async function comprarProduto(
         produto,
@@ -292,28 +415,22 @@ export default function Home({ navigation }) {
     ) {
 
         const mensagem =
-            `Sua solicitação de compra de ${produto} no valor de ${preco} foi registrada.`;
+            `Sua compra de ${produto} no valor de ${preco} foi registrada com sucesso.`;
 
-        await enviarNotificacao(
-            "Compra realizada! 🛍️",
-            mensagem
-        );
+        const sucesso =
+            await enviarNotificacao(
+                "Compra realizada! 🛍️",
+                mensagem,
+                "compra"
+            );
 
+        if (!sucesso) {
+            return;
+        }
 
-        Alert.alert(
-            "Compra registrada! 🛍️",
-            `Você selecionou ${produto}.`
-        );
-
-
-        setAba("notificacoes");
+        setAba("home");
 
     }
-
-
-    // =================================================
-    // LOGOUT
-    // =================================================
 
     async function realizarLogout() {
 
@@ -334,11 +451,6 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // TELA HOME
-    // =================================================
-
     function renderHome() {
 
         return (
@@ -348,13 +460,11 @@ export default function Home({ navigation }) {
                 showsVerticalScrollIndicator={false}
             >
 
-                {/* CABEÇALHO */}
-
                 <View style={styles.header}>
 
                     <View style={styles.headerTexto}>
 
-                        <Text style={styles.pequenoTexto}>
+                        <Text style={styles.saudo}>
                             Bem-vindo(a)! 🐾
                         </Text>
 
@@ -368,28 +478,40 @@ export default function Home({ navigation }) {
 
                     </View>
 
+                    <TouchableOpacity
+                        style={styles.sinoTopo}
+                        onPress={() =>
+                            setAba("notificacoes")
+                        }
+                        activeOpacity={0.8}
+                    >
 
-                    <View style={styles.avatar}>
-
-                        <Text style={styles.avatarTexto}>
-                            {nome
-                                .charAt(0)
-                                .toUpperCase()}
+                        <Text style={styles.sinoTexto}>
+                            🔔
                         </Text>
 
-                    </View>
+                        {notificacoes.length > 0 && (
+
+                            <View style={styles.badgeTopo}>
+
+                                <Text style={styles.badgeTopoTexto}>
+                                    {notificacoes.length}
+                                </Text>
+
+                            </View>
+
+                        )}
+
+                    </TouchableOpacity>
 
                 </View>
-
-
-                {/* BANNER */}
 
                 <View style={styles.banner}>
 
                     <View style={styles.bannerTexto}>
 
                         <Text style={styles.bannerTitulo}>
-                            Amor em cada cuidado! 💙
+                            Cuidado que faz bem.
                         </Text>
 
                         <Text style={styles.bannerSubtitulo}>
@@ -399,23 +521,29 @@ export default function Home({ navigation }) {
 
                     </View>
 
-                    <Text style={styles.bannerEmoji}>
-                        🐶
+                    <View style={styles.bannerIcone}>
+
+                        <Text style={styles.bannerEmoji}>
+                            🐶
+                        </Text>
+
+                    </View>
+
+                </View>
+
+                <View style={styles.secaoHeader}>
+
+                    <Text style={styles.secaoTitulo}>
+                        Serviços
+                    </Text>
+
+                    <Text style={styles.secaoSubtitulo}>
+                        Escolha um serviço para seu pet
                     </Text>
 
                 </View>
 
-
-                {/* SERVIÇOS */}
-
-                <Text style={styles.secaoTitulo}>
-                    O que você deseja fazer?
-                </Text>
-
-
                 <View style={styles.grid}>
-
-                    {/* BANHO */}
 
                     <TouchableOpacity
                         style={[
@@ -425,39 +553,35 @@ export default function Home({ navigation }) {
                         onPress={() =>
                             abrirServico("Banho")
                         }
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
 
                         <View
                             style={[
-                                styles.iconeContainer,
-                                styles.iconeAzul
+                                styles.cardIcone,
+                                styles.iconAzul
                             ]}
                         >
 
-                            <Text style={styles.icone}>
+                            <Text style={styles.cardEmoji}>
                                 🛁
                             </Text>
 
                         </View>
 
                         <Text style={styles.cardTitulo}>
-                            Agende seu banho
+                            Banho
                         </Text>
 
                         <Text style={styles.cardDescricao}>
-                            Deixe seu pet limpo,
-                            cheiroso e confortável.
+                            Higiene e conforto.
                         </Text>
 
-                        <Text style={styles.cardLink}>
+                        <Text style={styles.cardAcao}>
                             Agendar →
                         </Text>
 
                     </TouchableOpacity>
-
-
-                    {/* TOSA */}
 
                     <TouchableOpacity
                         style={[
@@ -467,39 +591,35 @@ export default function Home({ navigation }) {
                         onPress={() =>
                             abrirServico("Tosa")
                         }
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
 
                         <View
                             style={[
-                                styles.iconeContainer,
-                                styles.iconeRoxo
+                                styles.cardIcone,
+                                styles.iconRoxo
                             ]}
                         >
 
-                            <Text style={styles.icone}>
+                            <Text style={styles.cardEmoji}>
                                 ✂️
                             </Text>
 
                         </View>
 
                         <Text style={styles.cardTitulo}>
-                            Agende sua tosa
+                            Tosa
                         </Text>
 
                         <Text style={styles.cardDescricao}>
-                            Deixe seu pet ainda
-                            mais bonito e confortável.
+                            Beleza e bem-estar.
                         </Text>
 
-                        <Text style={styles.cardLink}>
+                        <Text style={styles.cardAcao}>
                             Agendar →
                         </Text>
 
                     </TouchableOpacity>
-
-
-                    {/* CONSULTA */}
 
                     <TouchableOpacity
                         style={[
@@ -509,39 +629,35 @@ export default function Home({ navigation }) {
                         onPress={() =>
                             abrirServico("Consulta")
                         }
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
 
                         <View
                             style={[
-                                styles.iconeContainer,
-                                styles.iconeVerde
+                                styles.cardIcone,
+                                styles.iconVerde
                             ]}
                         >
 
-                            <Text style={styles.icone}>
+                            <Text style={styles.cardEmoji}>
                                 🩺
                             </Text>
 
                         </View>
 
                         <Text style={styles.cardTitulo}>
-                            Agende sua consulta
+                            Consulta
                         </Text>
 
                         <Text style={styles.cardDescricao}>
-                            Cuide da saúde do
-                            seu melhor amigo.
+                            Saúde e acompanhamento.
                         </Text>
 
-                        <Text style={styles.cardLink}>
+                        <Text style={styles.cardAcao}>
                             Agendar →
                         </Text>
 
                     </TouchableOpacity>
-
-
-                    {/* PRODUTOS */}
 
                     <TouchableOpacity
                         style={[
@@ -551,32 +667,31 @@ export default function Home({ navigation }) {
                         onPress={() =>
                             setAba("produtos")
                         }
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
 
                         <View
                             style={[
-                                styles.iconeContainer,
-                                styles.iconeLaranja
+                                styles.cardIcone,
+                                styles.iconLaranja
                             ]}
                         >
 
-                            <Text style={styles.icone}>
+                            <Text style={styles.cardEmoji}>
                                 🛍️
                             </Text>
 
                         </View>
 
                         <Text style={styles.cardTitulo}>
-                            Compre nossos produtos
+                            Produtos
                         </Text>
 
                         <Text style={styles.cardDescricao}>
-                            Rações, brinquedos,
-                            higiene e muito mais.
+                            Tudo para seu pet.
                         </Text>
 
-                        <Text style={styles.cardLink}>
+                        <Text style={styles.cardAcao}>
                             Ver produtos →
                         </Text>
 
@@ -584,18 +699,30 @@ export default function Home({ navigation }) {
 
                 </View>
 
-
-                {/* CONTA */}
-
                 <View style={styles.contaBox}>
 
-                    <Text style={styles.contaTitulo}>
-                        Conta conectada
-                    </Text>
+                    <View style={styles.contaCheck}>
 
-                    <Text style={styles.contaEmail}>
-                        {email}
-                    </Text>
+                        <Text style={styles.contaCheckTexto}>
+                            ✓
+                        </Text>
+
+                    </View>
+
+                    <View style={styles.contaInfo}>
+
+                        <Text style={styles.contaTitulo}>
+                            Conta conectada
+                        </Text>
+
+                        <Text
+                            style={styles.contaEmail}
+                            numberOfLines={1}
+                        >
+                            {email}
+                        </Text>
+
+                    </View>
 
                 </View>
 
@@ -605,63 +732,73 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // TELA DE AGENDAMENTO
-    // =================================================
-
     function renderAgendamento() {
+
+        const corServico =
+            servicoSelecionado === "Banho"
+                ? styles.iconAzul
+                : servicoSelecionado === "Tosa"
+                    ? styles.iconRoxo
+                    : styles.iconVerde;
 
         return (
 
             <ScrollView
                 contentContainerStyle={styles.scroll}
                 keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
             >
 
                 <TouchableOpacity
                     onPress={() =>
                         setServicoSelecionado(null)
                     }
+                    activeOpacity={0.7}
                 >
 
                     <Text style={styles.voltar}>
-                        ← Voltar para Home
+                        ← Voltar
                     </Text>
 
                 </TouchableOpacity>
 
+                <View style={styles.paginaHeader}>
 
-                <View style={styles.formHeader}>
+                    <View
+                        style={[
+                            styles.paginaIcone,
+                            corServico
+                        ]}
+                    >
 
-                    <Text style={styles.formEmoji}>
+                        <Text style={styles.paginaEmoji}>
 
-                        {servicoSelecionado === "Banho" &&
-                            "🛁"}
+                            {servicoSelecionado === "Banho" &&
+                                "🛁"}
 
-                        {servicoSelecionado === "Tosa" &&
-                            "✂️"}
+                            {servicoSelecionado === "Tosa" &&
+                                "✂️"}
 
-                        {servicoSelecionado === "Consulta" &&
-                            "🩺"}
+                            {servicoSelecionado === "Consulta" &&
+                                "🩺"}
 
-                    </Text>
+                        </Text>
 
+                    </View>
 
-                    <View>
+                    <View style={styles.paginaHeaderTexto}>
 
                         <Text style={styles.tituloPagina}>
                             Agendar {servicoSelecionado}
                         </Text>
 
                         <Text style={styles.subtituloPagina}>
-                            Preencha os dados abaixo.
+                            Informe os dados do atendimento.
                         </Text>
 
                     </View>
 
                 </View>
-
 
                 <Text style={styles.label}>
                     Nome do pet
@@ -674,9 +811,7 @@ export default function Home({ navigation }) {
                     value={pet}
                     onChangeText={setPet}
                     autoCorrect={false}
-                    blurOnSubmit={false}
                 />
-
 
                 <Text style={styles.label}>
                     Data
@@ -689,9 +824,7 @@ export default function Home({ navigation }) {
                     value={data}
                     onChangeText={setData}
                     keyboardType="numeric"
-                    blurOnSubmit={false}
                 />
-
 
                 <Text style={styles.label}>
                     Horário
@@ -703,45 +836,72 @@ export default function Home({ navigation }) {
                     placeholderTextColor="#94A3B8"
                     value={horario}
                     onChangeText={setHorario}
-                    blurOnSubmit={false}
                 />
-
-
-                {/* RESUMO */}
 
                 <View style={styles.resumo}>
 
                     <Text style={styles.resumoTitulo}>
-                        📋 Resumo
+                        Resumo do agendamento
                     </Text>
 
-                    <Text style={styles.resumoTexto}>
-                        Serviço: {servicoSelecionado}
-                    </Text>
+                    <View style={styles.resumoLinha}>
 
-                    <Text style={styles.resumoTexto}>
-                        Pet: {pet || "Não informado"}
-                    </Text>
+                        <Text style={styles.resumoLabel}>
+                            Serviço
+                        </Text>
 
-                    <Text style={styles.resumoTexto}>
-                        Data: {data || "Não informada"}
-                    </Text>
+                        <Text style={styles.resumoValor}>
+                            {servicoSelecionado}
+                        </Text>
 
-                    <Text style={styles.resumoTexto}>
-                        Horário: {horario || "Não informado"}
-                    </Text>
+                    </View>
+
+                    <View style={styles.resumoLinha}>
+
+                        <Text style={styles.resumoLabel}>
+                            Pet
+                        </Text>
+
+                        <Text style={styles.resumoValor}>
+                            {pet || "—"}
+                        </Text>
+
+                    </View>
+
+                    <View style={styles.resumoLinha}>
+
+                        <Text style={styles.resumoLabel}>
+                            Data
+                        </Text>
+
+                        <Text style={styles.resumoValor}>
+                            {data || "—"}
+                        </Text>
+
+                    </View>
+
+                    <View style={styles.resumoLinha}>
+
+                        <Text style={styles.resumoLabel}>
+                            Horário
+                        </Text>
+
+                        <Text style={styles.resumoValor}>
+                            {horario || "—"}
+                        </Text>
+
+                    </View>
 
                 </View>
-
 
                 <TouchableOpacity
                     style={styles.confirmarButton}
                     onPress={agendarServico}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                 >
 
                     <Text style={styles.confirmarText}>
-                        ✓ Confirmar agendamento
+                        Confirmar agendamento
                     </Text>
 
                 </TouchableOpacity>
@@ -752,12 +912,43 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // TELA DE PRODUTOS
-    // =================================================
-
     function renderProdutos() {
+
+        const produtos = [
+
+            {
+                nome: "Petisco Natural",
+                descricao: "Petisco saboroso para cães.",
+                preco: "R$ 19,90",
+                emoji: "🦴",
+                estilo: styles.iconAzul,
+            },
+
+            {
+                nome: "Ração Premium",
+                descricao: "Alimentação completa e balanceada.",
+                preco: "R$ 89,90",
+                emoji: "🥫",
+                estilo: styles.iconAmarelo,
+            },
+
+            {
+                nome: "Brinquedo para Pets",
+                descricao: "Diversão para seu melhor amigo.",
+                preco: "R$ 29,90",
+                emoji: "🧸",
+                estilo: styles.iconRoxo,
+            },
+
+            {
+                nome: "Shampoo Pet",
+                descricao: "Higiene e cuidado para seu pet.",
+                preco: "R$ 34,90",
+                emoji: "🧴",
+                estilo: styles.iconVerde,
+            },
+
+        ];
 
         return (
 
@@ -770,239 +961,85 @@ export default function Home({ navigation }) {
                     onPress={() =>
                         setAba("home")
                     }
+                    activeOpacity={0.7}
                 >
 
                     <Text style={styles.voltar}>
-                        ← Voltar para Home
+                        ← Voltar
                     </Text>
 
                 </TouchableOpacity>
 
-
                 <Text style={styles.tituloPagina}>
-                    🛍️ Nossos produtos
+                    Produtos
                 </Text>
 
                 <Text style={styles.subtituloPagina}>
-                    Tudo para cuidar, alimentar e divertir
-                    seu melhor amigo.
+                    Tudo para cuidar do seu melhor amigo.
                 </Text>
 
+                {produtos.map(
+                    (produto, index) => (
 
-                {/* PRODUTO 1 */}
-
-                <View style={styles.produtoCard}>
-
-                    <View
-                        style={[
-                            styles.produtoEmojiBox,
-                            styles.produtoAzul
-                        ]}
-                    >
-
-                        <Text style={styles.produtoEmoji}>
-                            🦴
-                        </Text>
-
-                    </View>
-
-
-                    <View style={styles.produtoInfo}>
-
-                        <Text style={styles.produtoNome}>
-                            Petisco Natural
-                        </Text>
-
-                        <Text style={styles.produtoDescricao}>
-                            Petisco saboroso para cães.
-                        </Text>
-
-                        <Text style={styles.produtoPreco}>
-                            R$ 19,90
-                        </Text>
-
-
-                        <TouchableOpacity
-                            style={styles.comprarButton}
-                            onPress={() =>
-                                comprarProduto(
-                                    "Petisco Natural",
-                                    "R$ 19,90"
-                                )
-                            }
+                        <View
+                            key={index}
+                            style={styles.produtoCard}
                         >
 
-                            <Text style={styles.comprarText}>
-                                Comprar
-                            </Text>
+                            <View
+                                style={[
+                                    styles.produtoIcone,
+                                    produto.estilo
+                                ]}
+                            >
 
-                        </TouchableOpacity>
+                                <Text style={styles.produtoEmoji}>
+                                    {produto.emoji}
+                                </Text>
 
-                    </View>
+                            </View>
 
-                </View>
+                            <View style={styles.produtoInfo}>
 
+                                <Text style={styles.produtoNome}>
+                                    {produto.nome}
+                                </Text>
 
-                {/* PRODUTO 2 */}
+                                <Text style={styles.produtoDescricao}>
+                                    {produto.descricao}
+                                </Text>
 
-                <View style={styles.produtoCard}>
+                                <View style={styles.produtoRodape}>
 
-                    <View
-                        style={[
-                            styles.produtoEmojiBox,
-                            styles.produtoAmarelo
-                        ]}
-                    >
+                                    <Text style={styles.produtoPreco}>
+                                        {produto.preco}
+                                    </Text>
 
-                        <Text style={styles.produtoEmoji}>
-                            🥫
-                        </Text>
+                                    <TouchableOpacity
+                                        style={styles.comprarButton}
+                                        onPress={() =>
+                                            comprarProduto(
+                                                produto.nome,
+                                                produto.preco
+                                            )
+                                        }
+                                        activeOpacity={0.85}
+                                    >
 
-                    </View>
+                                        <Text style={styles.comprarText}>
+                                            Comprar
+                                        </Text>
 
+                                    </TouchableOpacity>
 
-                    <View style={styles.produtoInfo}>
+                                </View>
 
-                        <Text style={styles.produtoNome}>
-                            Ração Premium
-                        </Text>
+                            </View>
 
-                        <Text style={styles.produtoDescricao}>
-                            Alimentação completa e balanceada.
-                        </Text>
+                        </View>
 
-                        <Text style={styles.produtoPreco}>
-                            R$ 89,90
-                        </Text>
-
-
-                        <TouchableOpacity
-                            style={styles.comprarButton}
-                            onPress={() =>
-                                comprarProduto(
-                                    "Ração Premium",
-                                    "R$ 89,90"
-                                )
-                            }
-                        >
-
-                            <Text style={styles.comprarText}>
-                                Comprar
-                            </Text>
-
-                        </TouchableOpacity>
-
-                    </View>
-
-                </View>
-
-
-                {/* PRODUTO 3 */}
-
-                <View style={styles.produtoCard}>
-
-                    <View
-                        style={[
-                            styles.produtoEmojiBox,
-                            styles.produtoRoxo
-                        ]}
-                    >
-
-                        <Text style={styles.produtoEmoji}>
-                            🧸
-                        </Text>
-
-                    </View>
-
-
-                    <View style={styles.produtoInfo}>
-
-                        <Text style={styles.produtoNome}>
-                            Brinquedo para Pets
-                        </Text>
-
-                        <Text style={styles.produtoDescricao}>
-                            Diversão para seu melhor amigo.
-                        </Text>
-
-                        <Text style={styles.produtoPreco}>
-                            R$ 29,90
-                        </Text>
-
-
-                        <TouchableOpacity
-                            style={styles.comprarButton}
-                            onPress={() =>
-                                comprarProduto(
-                                    "Brinquedo para Pets",
-                                    "R$ 29,90"
-                                )
-                            }
-                        >
-
-                            <Text style={styles.comprarText}>
-                                Comprar
-                            </Text>
-
-                        </TouchableOpacity>
-
-                    </View>
-
-                </View>
-
-
-                {/* PRODUTO 4 */}
-
-                <View style={styles.produtoCard}>
-
-                    <View
-                        style={[
-                            styles.produtoEmojiBox,
-                            styles.produtoVerde
-                        ]}
-                    >
-
-                        <Text style={styles.produtoEmoji}>
-                            🧴
-                        </Text>
-
-                    </View>
-
-
-                    <View style={styles.produtoInfo}>
-
-                        <Text style={styles.produtoNome}>
-                            Shampoo Pet
-                        </Text>
-
-                        <Text style={styles.produtoDescricao}>
-                            Higiene e cuidado para seu pet.
-                        </Text>
-
-                        <Text style={styles.produtoPreco}>
-                            R$ 34,90
-                        </Text>
-
-
-                        <TouchableOpacity
-                            style={styles.comprarButton}
-                            onPress={() =>
-                                comprarProduto(
-                                    "Shampoo Pet",
-                                    "R$ 34,90"
-                                )
-                            }
-                        >
-
-                            <Text style={styles.comprarText}>
-                                Comprar
-                            </Text>
-
-                        </TouchableOpacity>
-
-                    </View>
-
-                </View>
+                    )
+                )}
 
             </ScrollView>
 
@@ -1010,59 +1047,66 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // TELA DE NOTIFICAÇÕES
-    // =================================================
-
     function renderNotificacoes() {
 
         return (
 
             <ScrollView
                 contentContainerStyle={styles.scroll}
+                showsVerticalScrollIndicator={false}
             >
 
                 <Text style={styles.tituloPagina}>
-                    🔔 Notificações
+                    Notificações
                 </Text>
 
                 <Text style={styles.subtituloPagina}>
-                    Aqui ficam registrados seus agendamentos
-                    e compras.
+                    Suas confirmações de agendamento e compras.
                 </Text>
-
-
-                {/* CONTADOR */}
 
                 <View style={styles.notificacaoResumo}>
 
-                    <Text style={styles.notificacaoResumoNumero}>
-                        {notificacoes.length}
-                    </Text>
+                    <View style={styles.notificacaoResumoIcone}>
 
-                    <Text style={styles.notificacaoResumoTexto}>
-                        notificação(ões) registrada(s)
-                    </Text>
+                        <Text style={styles.notificacaoResumoEmoji}>
+                            🔔
+                        </Text>
+
+                    </View>
+
+                    <View>
+
+                        <Text style={styles.notificacaoResumoNumero}>
+                            {notificacoes.length}
+                        </Text>
+
+                        <Text style={styles.notificacaoResumoTexto}>
+                            notificações registradas
+                        </Text>
+
+                    </View>
 
                 </View>
-
 
                 {notificacoes.length === 0 ? (
 
                     <View style={styles.vazio}>
 
-                        <Text style={styles.vazioEmoji}>
-                            🔕
-                        </Text>
+                        <View style={styles.vazioIcone}>
+
+                            <Text style={styles.vazioEmoji}>
+                                🔕
+                            </Text>
+
+                        </View>
 
                         <Text style={styles.vazioTitulo}>
-                            Tudo tranquilo por aqui!
+                            Nenhuma notificação
                         </Text>
 
                         <Text style={styles.vazioTexto}>
-                            Quando você fizer um agendamento
-                            ou uma compra, ela aparecerá aqui.
+                            Quando você realizar um agendamento
+                            ou uma compra, a confirmação aparecerá aqui.
                         </Text>
 
                     </View>
@@ -1070,61 +1114,63 @@ export default function Home({ navigation }) {
                 ) : (
 
                     notificacoes.map(
-                        (notificacao) => (
+                        notificacao => (
 
                             <View
                                 key={notificacao.id}
-                                style={styles.notificacaoCard}
+                                style={[
+                                    styles.notificacaoCard,
+
+                                    notificacao.tipo === "compra"
+                                        ? styles.notificacaoCompra
+                                        : styles.notificacaoAgendamento
+                                ]}
                             >
 
                                 <View
-                                    style={
-                                        styles.notificacaoIcone
-                                    }
+                                    style={[
+                                        styles.notificacaoIcone,
+
+                                        notificacao.tipo === "compra"
+                                            ? styles.iconLaranja
+                                            : styles.iconRoxo
+                                    ]}
                                 >
 
-                                    <Text>
-                                        {notificacao.titulo.includes(
-                                            "Compra"
-                                        )
+                                    <Text style={styles.notificacaoEmoji}>
+                                        {notificacao.tipo === "compra"
                                             ? "🛍️"
-                                            : "🔔"}
+                                            : "📅"}
                                     </Text>
 
                                 </View>
 
+                                <View style={styles.notificacaoConteudo}>
 
-                                <View
-                                    style={
-                                        styles.notificacaoConteudo
-                                    }
-                                >
+                                    <View style={styles.notificacaoTituloLinha}>
 
-                                    <Text
-                                        style={
-                                            styles.notificacaoTitulo
-                                        }
-                                    >
-                                        {notificacao.titulo}
-                                    </Text>
+                                        <Text style={styles.notificacaoTitulo}>
+                                            {notificacao.titulo}
+                                        </Text>
 
+                                        <View style={styles.tipoBadge}>
 
-                                    <Text
-                                        style={
-                                            styles.notificacaoMensagem
-                                        }
-                                    >
+                                            <Text style={styles.tipoBadgeTexto}>
+                                                {notificacao.tipo === "compra"
+                                                    ? "Compra"
+                                                    : "Agendamento"}
+                                            </Text>
+
+                                        </View>
+
+                                    </View>
+
+                                    <Text style={styles.notificacaoMensagem}>
                                         {notificacao.mensagem}
                                     </Text>
 
-
-                                    <Text
-                                        style={
-                                            styles.notificacaoHorario
-                                        }
-                                    >
-                                        Hoje às{" "}
-                                        {notificacao.horario}
+                                    <Text style={styles.notificacaoHorario}>
+                                        Hoje às {notificacao.horario}
                                     </Text>
 
                                 </View>
@@ -1142,27 +1188,22 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // TELA DE PERFIL
-    // =================================================
-
     function renderPerfil() {
 
         return (
 
             <ScrollView
                 contentContainerStyle={styles.scroll}
+                showsVerticalScrollIndicator={false}
             >
 
                 <Text style={styles.tituloPagina}>
-                    👤 Meu Perfil
+                    Meu Perfil
                 </Text>
 
                 <Text style={styles.subtituloPagina}>
-                    Confira os dados da sua conta.
+                    Informações da sua conta.
                 </Text>
-
 
                 <View style={styles.perfilCard}>
 
@@ -1176,11 +1217,9 @@ export default function Home({ navigation }) {
 
                     </View>
 
-
                     <Text style={styles.perfilNome}>
                         {nome}
                     </Text>
-
 
                     <Text style={styles.perfilEmail}>
                         {email}
@@ -1188,12 +1227,15 @@ export default function Home({ navigation }) {
 
                 </View>
 
-
                 <View style={styles.infoPerfil}>
 
-                    <Text style={styles.infoPerfilEmoji}>
-                        🐾
-                    </Text>
+                    <View style={styles.infoPerfilIcone}>
+
+                        <Text style={styles.infoPerfilEmoji}>
+                            🐾
+                        </Text>
+
+                    </View>
 
                     <View style={styles.infoPerfilTexto}>
 
@@ -1202,19 +1244,18 @@ export default function Home({ navigation }) {
                         </Text>
 
                         <Text style={styles.infoPerfilDescricao}>
-                            Use o aplicativo para agendar serviços,
-                            comprar produtos e receber notificações.
+                            Agende serviços, compre produtos
+                            e receba suas confirmações.
                         </Text>
 
                     </View>
 
                 </View>
 
-
                 <TouchableOpacity
                     style={styles.logoutButton}
                     onPress={realizarLogout}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                 >
 
                     <Text style={styles.logoutText}>
@@ -1229,13 +1270,7 @@ export default function Home({ navigation }) {
 
     }
 
-
-    // =================================================
-    // DECIDIR QUAL PARTE DA HOME MOSTRAR
-    // =================================================
-
     let conteudo;
-
 
     if (servicoSelecionado) {
 
@@ -1257,17 +1292,12 @@ export default function Home({ navigation }) {
         conteudo =
             renderNotificacoes();
 
-    } else if (aba === "perfil") {
+    } else {
 
         conteudo =
             renderPerfil();
 
     }
-
-
-    // =================================================
-    // RENDERIZAÇÃO PRINCIPAL
-    // =================================================
 
     return (
 
@@ -1277,27 +1307,93 @@ export default function Home({ navigation }) {
                 {conteudo}
             </View>
 
+            {popupVisivel && (
 
-            {/* MENU INFERIOR */}
+                <View
+                    pointerEvents="box-none"
+                    style={styles.popupWrapper}
+                >
+
+                    <View
+                        style={[
+                            styles.popup,
+
+                            popup.tipo === "compra"
+                                ? styles.popupCompra
+                                : styles.popupAgendamento
+                        ]}
+                    >
+
+                        <View
+                            style={[
+                                styles.popupIcone,
+
+                                popup.tipo === "compra"
+                                    ? styles.popupIconeCompra
+                                    : styles.popupIconeAgendamento
+                            ]}
+                        >
+
+                            <Text style={styles.popupIconeTexto}>
+                                {popup.tipo === "compra"
+                                    ? "🛍️"
+                                    : "✓"}
+                            </Text>
+
+                        </View>
+
+                        <View style={styles.popupConteudo}>
+
+                            <Text style={styles.popupTitulo}>
+                                {popup.titulo}
+                            </Text>
+
+                            <Text
+                                style={styles.popupMensagem}
+                                numberOfLines={3}
+                            >
+                                {popup.mensagem}
+                            </Text>
+
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.popupFechar}
+                            onPress={() =>
+                                setPopupVisivel(false)
+                            }
+                            activeOpacity={0.7}
+                        >
+
+                            <Text style={styles.popupFecharTexto}>
+                                ×
+                            </Text>
+
+                        </TouchableOpacity>
+
+                    </View>
+
+                </View>
+
+            )}
 
             {!servicoSelecionado && (
 
                 <View style={styles.menu}>
-
-                    {/* HOME */}
 
                     <TouchableOpacity
                         style={styles.menuItem}
                         onPress={() =>
                             setAba("home")
                         }
+                        activeOpacity={0.8}
                     >
 
                         <View
                             style={[
                                 styles.menuIconBox,
                                 aba === "home" &&
-                                    styles.menuIconAtivo
+                                    styles.menuAtivo
                             ]}
                         >
 
@@ -1319,21 +1415,19 @@ export default function Home({ navigation }) {
 
                     </TouchableOpacity>
 
-
-                    {/* NOTIFICAÇÕES */}
-
                     <TouchableOpacity
                         style={styles.menuItem}
                         onPress={() =>
                             setAba("notificacoes")
                         }
+                        activeOpacity={0.8}
                     >
 
                         <View
                             style={[
                                 styles.menuIconBox,
                                 aba === "notificacoes" &&
-                                    styles.menuIconAtivo
+                                    styles.menuAtivo
                             ]}
                         >
 
@@ -1343,13 +1437,9 @@ export default function Home({ navigation }) {
 
                             {notificacoes.length > 0 && (
 
-                                <View
-                                    style={styles.badge}
-                                >
+                                <View style={styles.badge}>
 
-                                    <Text
-                                        style={styles.badgeTexto}
-                                    >
+                                    <Text style={styles.badgeTexto}>
                                         {notificacoes.length}
                                     </Text>
 
@@ -1371,21 +1461,19 @@ export default function Home({ navigation }) {
 
                     </TouchableOpacity>
 
-
-                    {/* PERFIL */}
-
                     <TouchableOpacity
                         style={styles.menuItem}
                         onPress={() =>
                             setAba("perfil")
                         }
+                        activeOpacity={0.8}
                     >
 
                         <View
                             style={[
                                 styles.menuIconBox,
                                 aba === "perfil" &&
-                                    styles.menuIconAtivo
+                                    styles.menuAtivo
                             ]}
                         >
 
@@ -1417,16 +1505,11 @@ export default function Home({ navigation }) {
 
 }
 
-
-// =====================================================
-// ESTILOS
-// =====================================================
-
 const styles = StyleSheet.create({
 
     container: {
         flex: 1,
-        backgroundColor: "#FFF7ED",
+        backgroundColor: "#F8FAFC",
     },
 
     conteudo: {
@@ -1434,82 +1517,182 @@ const styles = StyleSheet.create({
     },
 
     scroll: {
-        padding: 20,
-        paddingBottom: 35,
+        paddingHorizontal: 18,
+        paddingTop: 16,
+        paddingBottom: 28,
     },
-
-
-    // =================================================
-    // CABEÇALHO
-    // =================================================
 
     header: {
         flexDirection: "row",
-        justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 20,
+        justifyContent: "space-between",
+        marginBottom: 17,
     },
 
     headerTexto: {
         flex: 1,
-        paddingRight: 15,
+        paddingRight: 12,
     },
 
-    pequenoTexto: {
-        fontSize: 14,
-        color: "#F97316",
-        fontWeight: "bold",
-        marginBottom: 5,
+    saudo: {
+        fontSize: 12,
+        color: "#7C3AED",
+        fontWeight: "700",
+        marginBottom: 2,
     },
 
     titulo: {
-        fontSize: 29,
-        fontWeight: "bold",
+        fontSize: 24,
+        fontWeight: "800",
         color: "#172554",
     },
 
     subtitulo: {
-        fontSize: 14,
+        fontSize: 12,
         color: "#64748B",
-        marginTop: 5,
+        marginTop: 3,
     },
 
-
-    // =================================================
-    // AVATAR
-    // =================================================
-
-    avatar: {
-        width: 55,
-        height: 55,
-        borderRadius: 28,
-        backgroundColor: "#FB7185",
+    sinoTopo: {
+        width: 45,
+        height: 45,
+        borderRadius: 14,
+        backgroundColor: "#FFFFFF",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
         justifyContent: "center",
         alignItems: "center",
-        borderWidth: 4,
-        borderColor: "#FFE4E6",
+        position: "relative",
+        elevation: 2,
     },
 
-    avatarTexto: {
-        color: "#FFF",
+    sinoTexto: {
         fontSize: 21,
-        fontWeight: "bold",
     },
 
+    badgeTopo: {
+        position: "absolute",
+        top: -5,
+        right: -5,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: "#EF4444",
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 2,
+        borderColor: "#F8FAFC",
+        paddingHorizontal: 3,
+    },
 
-    // =================================================
-    // BANNER
-    // =================================================
+    badgeTopoTexto: {
+        color: "#FFFFFF",
+        fontSize: 8,
+        fontWeight: "800",
+    },
+
+    popupWrapper: {
+        position: "absolute",
+        top: 10,
+        left: 14,
+        right: 14,
+        zIndex: 9999,
+        elevation: 30,
+    },
+
+    popup: {
+        minHeight: 70,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        padding: 11,
+        flexDirection: "row",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#000",
+        shadowOpacity: 0.13,
+        shadowRadius: 12,
+        shadowOffset: {
+            width: 0,
+            height: 5,
+        },
+        elevation: 12,
+    },
+
+    popupAgendamento: {
+        borderLeftWidth: 4,
+        borderLeftColor: "#22C55E",
+    },
+
+    popupCompra: {
+        borderLeftWidth: 4,
+        borderLeftColor: "#F97316",
+    },
+
+    popupIcone: {
+        width: 42,
+        height: 42,
+        borderRadius: 13,
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 10,
+    },
+
+    popupIconeAgendamento: {
+        backgroundColor: "#DCFCE7",
+    },
+
+    popupIconeCompra: {
+        backgroundColor: "#FFF7ED",
+    },
+
+    popupIconeTexto: {
+        fontSize: 20,
+        fontWeight: "800",
+    },
+
+    popupConteudo: {
+        flex: 1,
+        paddingRight: 5,
+    },
+
+    popupTitulo: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#172554",
+        marginBottom: 3,
+    },
+
+    popupMensagem: {
+        fontSize: 10,
+        lineHeight: 15,
+        color: "#64748B",
+    },
+
+    popupFechar: {
+        width: 27,
+        height: 27,
+        borderRadius: 9,
+        backgroundColor: "#F1F5F9",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+
+    popupFecharTexto: {
+        color: "#64748B",
+        fontSize: 20,
+        lineHeight: 23,
+    },
 
     banner: {
-        backgroundColor: "#7C3AED",
-        borderRadius: 24,
-        padding: 20,
+        backgroundColor: "#6D28D9",
+        borderRadius: 18,
+        paddingVertical: 16,
+        paddingHorizontal: 17,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        marginBottom: 25,
-        overflow: "hidden",
+        marginBottom: 21,
     },
 
     bannerTexto: {
@@ -1518,32 +1701,45 @@ const styles = StyleSheet.create({
     },
 
     bannerTitulo: {
-        color: "#FFF",
-        fontSize: 21,
-        fontWeight: "bold",
-        marginBottom: 8,
+        color: "#FFFFFF",
+        fontSize: 17,
+        fontWeight: "800",
+        marginBottom: 4,
     },
 
     bannerSubtitulo: {
         color: "#EDE9FE",
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 11,
+        lineHeight: 16,
+    },
+
+    bannerIcone: {
+        width: 53,
+        height: 53,
+        borderRadius: 17,
+        backgroundColor: "rgba(255,255,255,0.14)",
+        justifyContent: "center",
+        alignItems: "center",
     },
 
     bannerEmoji: {
-        fontSize: 65,
+        fontSize: 32,
     },
 
-
-    // =================================================
-    // SERVIÇOS
-    // =================================================
+    secaoHeader: {
+        marginBottom: 11,
+    },
 
     secaoTitulo: {
-        fontSize: 21,
-        fontWeight: "bold",
+        fontSize: 19,
+        fontWeight: "800",
         color: "#172554",
-        marginBottom: 15,
+    },
+
+    secaoSubtitulo: {
+        fontSize: 11,
+        color: "#94A3B8",
+        marginTop: 2,
     },
 
     grid: {
@@ -1554,257 +1750,262 @@ const styles = StyleSheet.create({
 
     card: {
         width: "48%",
-        borderRadius: 20,
-        padding: 16,
-        marginBottom: 15,
-        minHeight: 215,
+        minHeight: 166,
+        borderRadius: 17,
+        padding: 13,
+        marginBottom: 11,
         borderWidth: 1,
-        elevation: 3,
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 5,
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
+        elevation: 2,
     },
 
     cardAzul: {
-        backgroundColor: "#EFF6FF",
-        borderColor: "#BFDBFE",
+        backgroundColor: "#F4F8FF",
+        borderColor: "#DBEAFE",
     },
 
     cardRoxo: {
-        backgroundColor: "#F5F3FF",
-        borderColor: "#DDD6FE",
+        backgroundColor: "#F8F5FF",
+        borderColor: "#E9D5FF",
     },
 
     cardVerde: {
-        backgroundColor: "#ECFDF5",
-        borderColor: "#A7F3D0",
+        backgroundColor: "#F3FDF7",
+        borderColor: "#D1FAE5",
     },
 
     cardLaranja: {
-        backgroundColor: "#FFF7ED",
+        backgroundColor: "#FFFAF5",
         borderColor: "#FED7AA",
     },
 
-    iconeContainer: {
-        width: 52,
-        height: 52,
-        borderRadius: 17,
+    cardIcone: {
+        width: 41,
+        height: 41,
+        borderRadius: 12,
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 12,
+        marginBottom: 11,
     },
 
-    iconeAzul: {
+    iconAzul: {
         backgroundColor: "#DBEAFE",
     },
 
-    iconeRoxo: {
+    iconRoxo: {
         backgroundColor: "#EDE9FE",
     },
 
-    iconeVerde: {
+    iconVerde: {
         backgroundColor: "#D1FAE5",
     },
 
-    iconeLaranja: {
+    iconLaranja: {
         backgroundColor: "#FFEDD5",
     },
 
-    icone: {
-        fontSize: 28,
-    },
-
-    cardTitulo: {
-        fontSize: 17,
-        fontWeight: "bold",
-        color: "#172554",
-        marginBottom: 7,
-    },
-
-    cardDescricao: {
-        fontSize: 13,
-        color: "#64748B",
-        lineHeight: 18,
-        flex: 1,
-    },
-
-    cardLink: {
-        fontSize: 14,
-        color: "#7C3AED",
-        fontWeight: "bold",
-        marginTop: 12,
-    },
-
-
-    // =================================================
-    // CONTA
-    // =================================================
-
-    contaBox: {
-        backgroundColor: "#FFF",
-        borderRadius: 18,
-        padding: 17,
-        marginTop: 5,
-        borderWidth: 1,
-        borderColor: "#FED7AA",
-    },
-
-    contaTitulo: {
-        fontSize: 14,
-        color: "#F97316",
-        fontWeight: "bold",
-        marginBottom: 5,
-    },
-
-    contaEmail: {
-        fontSize: 14,
-        color: "#64748B",
-    },
-
-
-    // =================================================
-    // TELAS INTERNAS
-    // =================================================
-
-    tituloPagina: {
-        fontSize: 28,
-        fontWeight: "bold",
-        color: "#172554",
-        marginBottom: 8,
-    },
-
-    subtituloPagina: {
-        fontSize: 15,
-        color: "#64748B",
-        marginBottom: 25,
-        lineHeight: 22,
-    },
-
-    voltar: {
-        fontSize: 16,
-        color: "#7C3AED",
-        fontWeight: "bold",
-        marginBottom: 20,
-    },
-
-
-    // =================================================
-    // FORMULÁRIO
-    // =================================================
-
-    formHeader: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginBottom: 20,
-    },
-
-    formEmoji: {
-        fontSize: 45,
-        marginRight: 15,
-    },
-
-    label: {
-        fontSize: 15,
-        fontWeight: "bold",
-        color: "#172554",
-        marginBottom: 7,
-    },
-
-    input: {
-        backgroundColor: "#FFF",
-        borderWidth: 2,
-        borderColor: "#DDD6FE",
-        borderRadius: 14,
-        paddingHorizontal: 15,
-        paddingVertical: 14,
-        fontSize: 16,
-        marginBottom: 18,
-        color: "#172554",
-    },
-
-    resumo: {
-        backgroundColor: "#EEF2FF",
-        borderRadius: 16,
-        padding: 17,
-        marginBottom: 18,
-        borderWidth: 1,
-        borderColor: "#C7D2FE",
-    },
-
-    resumoTitulo: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#4338CA",
-        marginBottom: 10,
-    },
-
-    resumoTexto: {
-        fontSize: 14,
-        color: "#475569",
-        marginBottom: 5,
-    },
-
-    confirmarButton: {
-        backgroundColor: "#F97316",
-        borderRadius: 14,
-        padding: 17,
-        alignItems: "center",
-        marginTop: 5,
-    },
-
-    confirmarText: {
-        color: "#FFF",
-        fontSize: 16,
-        fontWeight: "bold",
-    },
-
-
-    // =================================================
-    // PRODUTOS
-    // =================================================
-
-    produtoCard: {
-        backgroundColor: "#FFF",
-        borderRadius: 20,
-        padding: 15,
-        flexDirection: "row",
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: "#E2E8F0",
-        elevation: 3,
-    },
-
-    produtoEmojiBox: {
-        width: 75,
-        height: 75,
-        borderRadius: 18,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 15,
-    },
-
-    produtoAzul: {
-        backgroundColor: "#DBEAFE",
-    },
-
-    produtoAmarelo: {
+    iconAmarelo: {
         backgroundColor: "#FEF3C7",
     },
 
-    produtoRoxo: {
-        backgroundColor: "#EDE9FE",
+    cardEmoji: {
+        fontSize: 21,
     },
 
-    produtoVerde: {
-        backgroundColor: "#D1FAE5",
+    cardTitulo: {
+        fontSize: 15,
+        fontWeight: "800",
+        color: "#172554",
+        marginBottom: 4,
+    },
+
+    cardDescricao: {
+        fontSize: 11,
+        lineHeight: 16,
+        color: "#64748B",
+    },
+
+    cardAcao: {
+        marginTop: 10,
+        fontSize: 11,
+        fontWeight: "800",
+        color: "#7C3AED",
+    },
+
+    contaBox: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 15,
+        padding: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginTop: 2,
+    },
+
+    contaCheck: {
+        width: 35,
+        height: 35,
+        borderRadius: 11,
+        backgroundColor: "#DCFCE7",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 9,
+    },
+
+    contaCheckTexto: {
+        color: "#16A34A",
+        fontSize: 16,
+        fontWeight: "800",
+    },
+
+    contaInfo: {
+        flex: 1,
+    },
+
+    contaTitulo: {
+        fontSize: 11,
+        fontWeight: "800",
+        color: "#172554",
+    },
+
+    contaEmail: {
+        fontSize: 10,
+        color: "#64748B",
+        marginTop: 2,
+    },
+
+    voltar: {
+        color: "#7C3AED",
+        fontSize: 13,
+        fontWeight: "700",
+        marginBottom: 17,
+    },
+
+    paginaHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 21,
+    },
+
+    paginaIcone: {
+        width: 51,
+        height: 51,
+        borderRadius: 16,
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 11,
+    },
+
+    paginaEmoji: {
+        fontSize: 26,
+    },
+
+    paginaHeaderTexto: {
+        flex: 1,
+    },
+
+    tituloPagina: {
+        fontSize: 24,
+        fontWeight: "800",
+        color: "#172554",
+        marginBottom: 4,
+    },
+
+    subtituloPagina: {
+        fontSize: 11,
+        lineHeight: 16,
+        color: "#64748B",
+        marginBottom: 14,
+    },
+
+    label: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#334155",
+        marginBottom: 6,
+    },
+
+    input: {
+        height: 46,
+        backgroundColor: "#FFFFFF",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        borderRadius: 12,
+        paddingHorizontal: 13,
+        fontSize: 13,
+        color: "#172554",
+        marginBottom: 14,
+    },
+
+    resumo: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 15,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 13,
+    },
+
+    resumoTitulo: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#172554",
+        marginBottom: 10,
+    },
+
+    resumoLinha: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 7,
+    },
+
+    resumoLabel: {
+        fontSize: 10,
+        color: "#94A3B8",
+    },
+
+    resumoValor: {
+        fontSize: 10,
+        color: "#334155",
+        fontWeight: "700",
+    },
+
+    confirmarButton: {
+        height: 48,
+        borderRadius: 13,
+        backgroundColor: "#7C3AED",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+
+    confirmarText: {
+        color: "#FFFFFF",
+        fontSize: 13,
+        fontWeight: "800",
+    },
+
+    produtoCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 15,
+        padding: 11,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        flexDirection: "row",
+    },
+
+    produtoIcone: {
+        width: 57,
+        height: 57,
+        borderRadius: 15,
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 11,
     },
 
     produtoEmoji: {
-        fontSize: 40,
+        fontSize: 28,
     },
 
     produtoInfo: {
@@ -1812,194 +2013,250 @@ const styles = StyleSheet.create({
     },
 
     produtoNome: {
-        fontSize: 17,
-        fontWeight: "bold",
+        fontSize: 13,
+        fontWeight: "800",
         color: "#172554",
-        marginBottom: 4,
+        marginBottom: 3,
     },
 
     produtoDescricao: {
-        fontSize: 13,
+        fontSize: 10,
+        lineHeight: 15,
         color: "#64748B",
-        marginBottom: 6,
+        marginBottom: 7,
+    },
+
+    produtoRodape: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
     },
 
     produtoPreco: {
-        fontSize: 16,
-        fontWeight: "bold",
+        fontSize: 12,
+        fontWeight: "800",
         color: "#F97316",
-        marginBottom: 9,
     },
 
     comprarButton: {
         backgroundColor: "#7C3AED",
-        paddingVertical: 9,
-        paddingHorizontal: 15,
-        borderRadius: 10,
-        alignSelf: "flex-start",
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 8,
     },
 
     comprarText: {
-        color: "#FFF",
-        fontWeight: "bold",
-        fontSize: 13,
+        color: "#FFFFFF",
+        fontSize: 10,
+        fontWeight: "800",
     },
 
-
-    // =================================================
-    // NOTIFICAÇÕES
-    // =================================================
-
     notificacaoResumo: {
-        backgroundColor: "#7C3AED",
-        borderRadius: 18,
-        padding: 18,
+        backgroundColor: "#6D28D9",
+        borderRadius: 15,
+        padding: 13,
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 18,
+        marginBottom: 13,
+    },
+
+    notificacaoResumoIcone: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: "rgba(255,255,255,0.14)",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 10,
+    },
+
+    notificacaoResumoEmoji: {
+        fontSize: 20,
     },
 
     notificacaoResumoNumero: {
-        fontSize: 28,
-        fontWeight: "bold",
-        color: "#FFF",
-        marginRight: 10,
+        color: "#FFFFFF",
+        fontSize: 20,
+        fontWeight: "800",
     },
 
     notificacaoResumoTexto: {
         color: "#EDE9FE",
-        fontSize: 14,
+        fontSize: 10,
     },
 
     notificacaoCard: {
-        backgroundColor: "#FFF",
-        borderRadius: 17,
-        padding: 15,
-        marginBottom: 12,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 15,
+        padding: 12,
+        marginBottom: 9,
         flexDirection: "row",
-        borderLeftWidth: 5,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+
+    notificacaoAgendamento: {
+        borderLeftWidth: 4,
+        borderLeftColor: "#7C3AED",
+    },
+
+    notificacaoCompra: {
+        borderLeftWidth: 4,
         borderLeftColor: "#F97316",
-        elevation: 2,
     },
 
     notificacaoIcone: {
-        width: 45,
-        height: 45,
-        borderRadius: 14,
-        backgroundColor: "#FFF7ED",
+        width: 41,
+        height: 41,
+        borderRadius: 12,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 12,
+        marginRight: 9,
+    },
+
+    notificacaoEmoji: {
+        fontSize: 19,
     },
 
     notificacaoConteudo: {
         flex: 1,
     },
 
+    notificacaoTituloLinha: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        marginBottom: 4,
+    },
+
     notificacaoTitulo: {
-        fontSize: 16,
-        fontWeight: "bold",
+        flex: 1,
+        fontSize: 12,
+        fontWeight: "800",
         color: "#172554",
-        marginBottom: 5,
+        paddingRight: 5,
+    },
+
+    tipoBadge: {
+        backgroundColor: "#F1F5F9",
+        borderRadius: 6,
+        paddingHorizontal: 5,
+        paddingVertical: 3,
+    },
+
+    tipoBadgeTexto: {
+        fontSize: 7,
+        fontWeight: "800",
+        color: "#64748B",
     },
 
     notificacaoMensagem: {
-        fontSize: 14,
+        fontSize: 10,
+        lineHeight: 15,
         color: "#64748B",
-        lineHeight: 20,
-        marginBottom: 6,
+        marginBottom: 4,
     },
 
     notificacaoHorario: {
-        fontSize: 11,
+        fontSize: 8,
         color: "#94A3B8",
     },
 
     vazio: {
         alignItems: "center",
-        justifyContent: "center",
-        marginTop: 50,
+        paddingTop: 42,
         paddingHorizontal: 25,
     },
 
+    vazioIcone: {
+        width: 62,
+        height: 62,
+        borderRadius: 20,
+        backgroundColor: "#F1F5F9",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 12,
+    },
+
     vazioEmoji: {
-        fontSize: 55,
-        marginBottom: 15,
+        fontSize: 29,
     },
 
     vazioTitulo: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#172554",
-        marginBottom: 7,
-    },
-
-    vazioTexto: {
-        color: "#64748B",
-        fontSize: 14,
-        textAlign: "center",
-        lineHeight: 20,
-    },
-
-
-    // =================================================
-    // PERFIL
-    // =================================================
-
-    perfilCard: {
-        backgroundColor: "#FFF",
-        borderRadius: 22,
-        padding: 25,
-        alignItems: "center",
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: "#DDD6FE",
-    },
-
-    perfilAvatar: {
-        width: 90,
-        height: 90,
-        borderRadius: 45,
-        backgroundColor: "#FB7185",
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 15,
-        borderWidth: 5,
-        borderColor: "#FFE4E6",
-    },
-
-    perfilAvatarTexto: {
-        color: "#FFF",
-        fontSize: 38,
-        fontWeight: "bold",
-    },
-
-    perfilNome: {
-        fontSize: 22,
-        fontWeight: "bold",
+        fontSize: 15,
+        fontWeight: "800",
         color: "#172554",
         marginBottom: 5,
     },
 
+    vazioTexto: {
+        fontSize: 10,
+        lineHeight: 15,
+        color: "#64748B",
+        textAlign: "center",
+    },
+
+    perfilCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 17,
+        padding: 21,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 11,
+    },
+
+    perfilAvatar: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        backgroundColor: "#7C3AED",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+
+    perfilAvatarTexto: {
+        color: "#FFFFFF",
+        fontSize: 28,
+        fontWeight: "800",
+    },
+
+    perfilNome: {
+        fontSize: 18,
+        fontWeight: "800",
+        color: "#172554",
+        marginBottom: 3,
+    },
+
     perfilEmail: {
-        fontSize: 14,
+        fontSize: 10,
         color: "#64748B",
     },
 
     infoPerfil: {
-        backgroundColor: "#ECFDF5",
-        borderRadius: 18,
-        padding: 17,
+        backgroundColor: "#F7F4FF",
+        borderRadius: 15,
+        padding: 12,
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 20,
         borderWidth: 1,
-        borderColor: "#A7F3D0",
+        borderColor: "#E9D5FF",
+        marginBottom: 13,
+    },
+
+    infoPerfilIcone: {
+        width: 41,
+        height: 41,
+        borderRadius: 12,
+        backgroundColor: "#EDE9FE",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 9,
     },
 
     infoPerfilEmoji: {
-        fontSize: 35,
-        marginRight: 12,
+        fontSize: 20,
     },
 
     infoPerfilTexto: {
@@ -2007,45 +2264,43 @@ const styles = StyleSheet.create({
     },
 
     infoPerfilTitulo: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#065F46",
-        marginBottom: 4,
+        fontSize: 12,
+        fontWeight: "800",
+        color: "#4C1D95",
+        marginBottom: 2,
     },
 
     infoPerfilDescricao: {
-        color: "#047857",
-        fontSize: 13,
-        lineHeight: 19,
+        fontSize: 9,
+        lineHeight: 14,
+        color: "#6D28D9",
     },
 
     logoutButton: {
-        backgroundColor: "#EF4444",
-        padding: 17,
-        borderRadius: 14,
+        height: 48,
+        borderRadius: 13,
+        backgroundColor: "#FEF2F2",
+        borderWidth: 1,
+        borderColor: "#FECACA",
+        justifyContent: "center",
         alignItems: "center",
     },
 
     logoutText: {
-        color: "#FFF",
-        fontSize: 16,
-        fontWeight: "bold",
+        color: "#DC2626",
+        fontSize: 12,
+        fontWeight: "800",
     },
 
-
-    // =================================================
-    // MENU
-    // =================================================
-
     menu: {
-        height: 78,
-        backgroundColor: "#FFF",
+        height: 66,
+        backgroundColor: "#FFFFFF",
         borderTopWidth: 1,
         borderTopColor: "#E2E8F0",
         flexDirection: "row",
-        justifyContent: "space-around",
         alignItems: "center",
-        elevation: 10,
+        justifyContent: "space-around",
+        elevation: 8,
     },
 
     menuItem: {
@@ -2055,50 +2310,53 @@ const styles = StyleSheet.create({
     },
 
     menuIconBox: {
-        width: 43,
-        height: 34,
-        borderRadius: 14,
+        width: 39,
+        height: 29,
+        borderRadius: 10,
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 3,
+        marginBottom: 2,
         position: "relative",
     },
 
-    menuIconAtivo: {
-        backgroundColor: "#EDE9FE",
+    menuAtivo: {
+        backgroundColor: "#F3E8FF",
     },
 
     menuIcon: {
-        fontSize: 21,
+        fontSize: 18,
     },
 
     menuTexto: {
-        fontSize: 11,
-        color: "#64748B",
+        fontSize: 9,
+        color: "#94A3B8",
+        fontWeight: "600",
     },
 
     menuTextoAtivo: {
         color: "#7C3AED",
-        fontWeight: "bold",
+        fontWeight: "800",
     },
 
     badge: {
         position: "absolute",
-        right: 0,
-        top: -3,
+        right: -2,
+        top: -4,
+        minWidth: 16,
+        height: 16,
+        borderRadius: 8,
         backgroundColor: "#EF4444",
-        minWidth: 17,
-        height: 17,
-        borderRadius: 9,
         justifyContent: "center",
         alignItems: "center",
-        paddingHorizontal: 3,
+        paddingHorizontal: 2,
+        borderWidth: 1.5,
+        borderColor: "#FFFFFF",
     },
 
     badgeTexto: {
-        color: "#FFF",
-        fontSize: 9,
-        fontWeight: "bold",
+        color: "#FFFFFF",
+        fontSize: 7,
+        fontWeight: "800",
     },
 
 });

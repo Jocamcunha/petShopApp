@@ -13,33 +13,37 @@ import {
 
 import { cadastrar } from "../services/auth";
 
-
 export default function Cadastro({ navigation }) {
 
     const [email, setEmail] = useState("");
     const [senha, setSenha] = useState("");
 
-
     async function realizarCadastro() {
 
-        if (!email || !senha) {
+        if (
+            email.trim() === "" ||
+            senha.trim() === ""
+        ) {
 
             Alert.alert(
                 "Campos incompletos",
-                "Preencha todos os campos."
+                "Preencha seu e-mail e sua senha."
             );
 
             return;
-        }
 
+        }
 
         try {
 
-            await cadastrar(email, senha);
+            await cadastrar(
+                email.trim(),
+                senha
+            );
 
             Alert.alert(
-                "Cadastro realizado! 🎉",
-                "Seu usuário foi cadastrado com sucesso.",
+                "Conta criada!",
+                "Seu cadastro foi realizado com sucesso.",
                 [
                     {
                         text: "Continuar",
@@ -52,35 +56,38 @@ export default function Cadastro({ navigation }) {
         } catch (error) {
 
             Alert.alert(
-                "Não foi possível realizar o cadastro",
-                "Verifique o e-mail e a senha e tente novamente."
+                "Não foi possível criar a conta",
+                "Confira o e-mail informado e verifique se a senha possui pelo menos 6 caracteres."
             );
 
             console.log(error);
+
         }
+
     }
 
-
     return (
+
         <SafeAreaView style={styles.container}>
 
             <ScrollView
                 contentContainerStyle={styles.scroll}
                 keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
             >
 
-                {/* TOPO */}
+                <View style={styles.logo}>
 
-                <View style={styles.topo}>
+                    <Text style={styles.logoEmoji}>
+                        🐶
+                    </Text>
 
-                    <View style={styles.logo}>
-                        <Text style={styles.logoTexto}>
-                            🐾
-                        </Text>
-                    </View>
+                </View>
+
+                <View style={styles.header}>
 
                     <Text style={styles.titulo}>
-                        Crie sua conta!
+                        Crie sua conta
                     </Text>
 
                     <Text style={styles.subtitulo}>
@@ -90,21 +97,15 @@ export default function Cadastro({ navigation }) {
 
                 </View>
 
-
-                {/* CARD */}
-
                 <View style={styles.card}>
 
                     <Text style={styles.cardTitulo}>
-                        Vamos começar 🐶
+                        Vamos começar
                     </Text>
 
                     <Text style={styles.cardSubtitulo}>
                         Informe seus dados para criar sua conta.
                     </Text>
-
-
-                    {/* E-MAIL */}
 
                     <Text style={styles.label}>
                         E-mail
@@ -119,11 +120,7 @@ export default function Cadastro({ navigation }) {
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoCorrect={false}
-                        blurOnSubmit={false}
                     />
-
-
-                    {/* SENHA */}
 
                     <Text style={styles.label}>
                         Senha
@@ -131,35 +128,34 @@ export default function Cadastro({ navigation }) {
 
                     <TextInput
                         style={styles.input}
-                        placeholder="Digite sua senha"
+                        placeholder="Crie uma senha"
                         placeholderTextColor="#94A3B8"
                         value={senha}
                         onChangeText={setSenha}
                         secureTextEntry
                         autoCapitalize="none"
                         autoCorrect={false}
-                        blurOnSubmit={false}
                     />
 
-
-                    {/* BOTÃO CADASTRAR */}
+                    <Text style={styles.dica}>
+                        A senha deve possuir pelo menos 6 caracteres.
+                    </Text>
 
                     <TouchableOpacity
                         style={styles.botaoPrincipal}
                         onPress={realizarCadastro}
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
+
                         <Text style={styles.botaoPrincipalTexto}>
-                            Criar minha conta 🐾
+                            Criar minha conta
                         </Text>
+
                     </TouchableOpacity>
 
+                    <View style={styles.divisor} />
 
-                    {/* IR PARA LOGIN */}
-
-                    <View style={styles.separador} />
-
-                    <Text style={styles.jaTemConta}>
+                    <Text style={styles.rodapeTexto}>
                         Já possui uma conta?
                     </Text>
 
@@ -168,200 +164,182 @@ export default function Cadastro({ navigation }) {
                         onPress={() =>
                             navigation.navigate("Login")
                         }
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                     >
+
                         <Text style={styles.botaoSecundarioTexto}>
                             Acessar minha conta
                         </Text>
+
                     </TouchableOpacity>
 
                 </View>
 
-
-                {/* RODAPÉ */}
-
-                <View style={styles.rodape}>
-
-                    <Text style={styles.rodapeTexto}>
-                        🐾 Amor, cuidado e carinho para seu pet.
-                    </Text>
-
-                </View>
+                <Text style={styles.frase}>
+                    🐾 Seu pet merece todo esse carinho.
+                </Text>
 
             </ScrollView>
 
         </SafeAreaView>
-    );
-}
 
+    );
+
+}
 
 const styles = StyleSheet.create({
 
     container: {
         flex: 1,
-        backgroundColor: "#FFF7ED",
+        backgroundColor: "#F8FAFC",
     },
 
     scroll: {
         flexGrow: 1,
         justifyContent: "center",
-        padding: 20,
-    },
-
-
-    // TOPO
-
-    topo: {
-        alignItems: "center",
-        marginBottom: 25,
+        paddingHorizontal: 20,
+        paddingVertical: 28,
     },
 
     logo: {
-        width: 82,
-        height: 82,
-        borderRadius: 41,
-        backgroundColor: "#7C3AED",
+        width: 66,
+        height: 66,
+        borderRadius: 21,
+        backgroundColor: "#F97316",
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 16,
-        borderWidth: 6,
-        borderColor: "#EDE9FE",
+        alignSelf: "center",
+        marginBottom: 15,
+        borderWidth: 5,
+        borderColor: "#FFEDD5",
     },
 
-    logoTexto: {
-        fontSize: 40,
+    logoEmoji: {
+        fontSize: 31,
+    },
+
+    header: {
+        alignItems: "center",
+        marginBottom: 18,
     },
 
     titulo: {
-        fontSize: 30,
-        fontWeight: "bold",
-        color: "#172554",
-        textAlign: "center",
-        marginBottom: 8,
-    },
-
-    subtitulo: {
-        fontSize: 14,
-        color: "#64748B",
-        textAlign: "center",
-        lineHeight: 21,
-        maxWidth: 330,
-    },
-
-
-    // CARD
-
-    card: {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 24,
-        padding: 22,
-        borderWidth: 1,
-        borderColor: "#DDD6FE",
-
-        elevation: 5,
-
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        shadowOffset: {
-            width: 0,
-            height: 3,
-        },
-    },
-
-    cardTitulo: {
-        fontSize: 22,
-        fontWeight: "bold",
+        fontSize: 27,
+        fontWeight: "800",
         color: "#172554",
         marginBottom: 5,
     },
 
-    cardSubtitulo: {
-        fontSize: 14,
+    subtitulo: {
+        maxWidth: 315,
+        textAlign: "center",
         color: "#64748B",
-        lineHeight: 20,
-        marginBottom: 22,
+        fontSize: 12,
+        lineHeight: 17,
     },
 
-
-    // CAMPOS
-
-    label: {
-        fontSize: 15,
-        fontWeight: "bold",
-        color: "#172554",
-        marginBottom: 7,
+    card: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 20,
+        padding: 18,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 9,
+        shadowOffset: {
+            width: 0,
+            height: 3,
+        },
+        elevation: 3,
     },
 
-    input: {
-        backgroundColor: "#F8FAFC",
-        borderWidth: 2,
-        borderColor: "#DDD6FE",
-        borderRadius: 14,
-        paddingHorizontal: 15,
-        paddingVertical: 14,
-        fontSize: 16,
+    cardTitulo: {
+        fontSize: 19,
+        fontWeight: "800",
         color: "#172554",
+        marginBottom: 3,
+    },
+
+    cardSubtitulo: {
+        fontSize: 11,
+        color: "#64748B",
         marginBottom: 18,
     },
 
+    label: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#334155",
+        marginBottom: 6,
+    },
 
-    // BOTÕES
+    input: {
+        height: 47,
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        borderRadius: 12,
+        paddingHorizontal: 13,
+        color: "#172554",
+        fontSize: 13,
+        marginBottom: 8,
+    },
+
+    dica: {
+        fontSize: 9,
+        color: "#94A3B8",
+        marginBottom: 13,
+    },
 
     botaoPrincipal: {
+        height: 48,
         backgroundColor: "#F97316",
-        borderRadius: 14,
-        paddingVertical: 16,
+        borderRadius: 13,
+        justifyContent: "center",
         alignItems: "center",
-        marginTop: 5,
     },
 
     botaoPrincipalTexto: {
         color: "#FFFFFF",
-        fontSize: 16,
-        fontWeight: "bold",
+        fontSize: 13,
+        fontWeight: "800",
     },
 
-    separador: {
+    divisor: {
         height: 1,
         backgroundColor: "#E2E8F0",
-        marginVertical: 20,
-    },
-
-    jaTemConta: {
-        textAlign: "center",
-        color: "#64748B",
-        fontSize: 14,
-        marginBottom: 10,
-    },
-
-    botaoSecundario: {
-        backgroundColor: "#EDE9FE",
-        borderRadius: 14,
-        paddingVertical: 15,
-        alignItems: "center",
-        borderWidth: 1,
-        borderColor: "#DDD6FE",
-    },
-
-    botaoSecundarioTexto: {
-        color: "#7C3AED",
-        fontSize: 15,
-        fontWeight: "bold",
-    },
-
-
-    // RODAPÉ
-
-    rodape: {
-        alignItems: "center",
-        marginTop: 20,
+        marginVertical: 17,
     },
 
     rodapeTexto: {
-        color: "#94A3B8",
-        fontSize: 12,
         textAlign: "center",
+        color: "#94A3B8",
+        fontSize: 10,
+        marginBottom: 9,
+    },
+
+    botaoSecundario: {
+        height: 45,
+        backgroundColor: "#FFF7ED",
+        borderWidth: 1,
+        borderColor: "#FED7AA",
+        borderRadius: 12,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+
+    botaoSecundarioTexto: {
+        color: "#F97316",
+        fontSize: 12,
+        fontWeight: "800",
+    },
+
+    frase: {
+        textAlign: "center",
+        color: "#94A3B8",
+        fontSize: 9,
+        marginTop: 15,
     },
 
 });
